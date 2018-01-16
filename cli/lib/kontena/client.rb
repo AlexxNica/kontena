@@ -11,6 +11,8 @@ module Kontena
     X_KONTENA_VERSION  = 'X-Kontena-Version'.freeze
     ACCEPT             = 'Accept'.freeze
     AUTHORIZATION      = 'Authorization'.freeze
+    ACCEPT_ENCODING    = 'Accept-Encoding'.freeze
+    GZIP               = 'gzip'.freeze
 
     attr_accessor :default_headers
     attr_accessor :path_prefix
@@ -62,6 +64,8 @@ module Kontena
       excon_opts[:ssl_ca_file] = @options[:ssl_cert_path]
       excon_opts[:ssl_verify_peer_host] = @options[:ssl_subject_cn]
 
+      excon_opts[:middlewares] = Excon.defaults[:middlewares] + [Excon::Middleware::Decompress]
+
       debug { "Excon opts: #{excon_opts.inspect}" }
 
       @http_client = Excon.new(api_url, excon_opts)
@@ -69,6 +73,7 @@ module Kontena
       @default_headers = {
         ACCEPT => CONTENT_JSON,
         CONTENT_TYPE => CONTENT_JSON,
+        ACCEPT_ENCODING => GZIP,
         'User-Agent' => "kontena-cli/#{Kontena::Cli::VERSION}"
       }.merge(options[:default_headers])
 
@@ -338,6 +343,10 @@ module Kontena
       end
       raise Kontena::Errors::StandardError.new(401, 'Unauthorized')
     rescue Excon::Error::HTTPStatus => error
+      if error.response.headers['Content-Encoding'] == 'gzip'
+        error.response.body = Zlib::GzipReader.new(StringIO.new(error.response.body)).read
+      end
+
       debug { "Request #{error.request[:method].upcase} #{error.request[:path]}: #{error.response.status} #{error.response.reason_phrase}: #{error.response.body}" }
 
       handle_error_response(error.response)
